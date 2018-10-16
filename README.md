@@ -111,7 +111,7 @@ eg:找出矩形范围内的点的中心和最小矩形
                                                    .order(SortOrder.ASC);
   builder.sort(sortBuilder);
 ```
- ps: 读者可以随意组合.作者已经实现 求几个点的中心算法,有兴趣可以自行检验,差别不大,结果受精度影响. 我也将按半径生成点的算法实现,但不适合半径很大的.
+ ps: 读者可以随意组合.作者已经实现 求几个点的[中心算法](https://github.com/JRhuang-96/ES-GeoQuery/blob/master/geo/GetCenter.java),有兴趣可以自行检验,差别不大,结果受精度影响. 我也将按半径生成点的[算法实现](https://github.com/JRhuang-96/ES-GeoQuery/blob/master/geo/SymPoints.java),但不适合半径很大的.
  
  *****************
  ****************
