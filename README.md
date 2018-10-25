@@ -6,8 +6,8 @@
  <h3>下面将介绍ES 的geo_point与geo_shape的区别</h3>
  <ul>
 <li><h3>geo_point 与geo_shape 的区别</li>
-<li><h3>geo_point 的聚合查询</li>
-<li><h3>geo_shape 的形状查询</li>
+<li><h3>聚合查询</li>
+<li><h3>形状查询</li>
 </ul>
 
 
@@ -15,19 +15,46 @@
 ********************
 
 ### 一. geo_point 与geo_shape 的区别
+geo_point : 点可以表示成四种类型对象 : 1.对象形式 :{"lat":12,"lon":12}, 2.字符串形式, 3.geohash, 4.array([lon,lat])
+geo_shape : 字段必须显示声明成 geo_shape类型,才能使用其中的对象.<br>
+一个点可以表示为geohash。Geohashes是纬度和经度交错位的base32编码字符串。<br>
 
-  ||geo_point|geo_shape|
-  |:---|:---|:---|
-  |排序|可以|不可以|
-  |聚合|可以|不可以|
-  |存储空值|可以|可以|
-  |存储方式|以(lat,lon)对存储的|以Geojson映射存储的|
-  
- 说明:1)由于GeoShape是映射GeoJson的,所以两者的本质区别就很明显了<br>
- &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;2) geo_shape 是图形,所以不能做排序,聚合<br>  
  两者本质区别: <br>	
  * #### geo_point 就是 存储 (lat,lon)对
- * #### geo_shape 是将geo_json几何对象映射到geo_shape类型.换句话说,其本质是因为geo_json的属性.
+ ```
+ //数组形式存储的,其他几种方式都不相同,请自行按照官网例子测试
+ "_source": {
+ "location": [     
+          112.334571
+           ,
+          24.313879
+             ],
+     }
+     
+             
+ ```
+ * #### geo_shape 是将geo_json几何对象映射到geo_shape类型.换句话说,其本质是因为geo_json的属性.但geo_shape 增加了两种新的类型 :circle,envelope 
+ ```
+ //列举其中一种
+ "_source": {
+"location": {
+"type": "linestring",
+ "coordinates": [
+        [
+          -77.03653
+          ,
+          38.897676
+        ]
+       ,
+        [
+         -77.009051
+        ,
+         38.889939
+        ]
+     ]
+   }
+}
+ ```
  
  下面就浅谈下[GeoJson](https://tools.ietf.org/html/rfc7946):
  <p>&nbsp;&nbsp;&nbsp;&nbsp;GeoJSON是一种用于编码各种地理数据结构的格式,基于JavaScript的地理空间数据交换格式. 
@@ -47,10 +74,25 @@ GeoJSON支持以下几何类型：Point，LineString， Polygon，MultiPoint，M
 而geo_point 却不需要存储这么多东西, 只需要存储经纬对(lat ,lon) 即可</br>
 这就决定了两者在存储空间上的差异:<b>geo_shape 比geo_point 占的空间大,事实也是如此.</b>
 
+小结:<br>
+
+||geo_point|geo_shape|
+|:---|:---|:---|
+|排序|可以|不可以|
+|聚合|可以|不可以|
+|存储空值|可以|可以|
+|存储方式|以(lat,lon)对存储的|以Geojson映射存储的|
+|type|1种|9种|
+  
+ 说明:1)由于GeoShape是映射GeoJson的,所以两者的本质区别就很明显了<br>
+ &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;2) geo_shape 是图形,所以不能做排序,聚合<br>  
+
+
 **************
 **************
-### 二.geo_point 聚合(两种桶聚合,两种指标聚合)
-#### 1.桶聚合(Buckets Aggregations) : </br>
+### 二.聚合(只有geo_point 才有聚合.两种桶聚合,两种指标聚合)
+
+##### 1.桶聚合(Buckets Aggregations) : </br>
 * hashGridAgg(通过 Geohashes 生成的网格进行聚合,返回的是网格中心);
 ```
 AggregationBuilder aggregation = AggregationBuilders .geohashGrid("agg")    
@@ -72,10 +114,11 @@ AggregationBuilder aggregation = AggregationBuilders.geoDistance("agg",newGeoPoi
 
 ```
 
-#### 2.指标聚合(Metrics Aggregations):</br>
-* 	 geoCentroid(地理图形的中心) ;
+##### 2.指标聚合(Metrics Aggregations):</br>
+* 	 geoCentroid(地质点的中心) ;
 ```
-GeoCentroidAggregationBuilder aggregation  = AggregationBuilders.geoCentroid("center").field(field);
+GeoCentroidAggregationBuilder aggregation = AggregationBuilders.geoCentroid("center").field(field);
+
 
 ```
 
@@ -99,12 +142,14 @@ eg:找出矩形范围内的点的中心和最小矩形
 
         GeoBoundsAggregationBuilder  bounds =  AggregationBuilders.geoBounds("bounds").field(field);
         
+        //builder 为SearchSourceBuilder 对象
         builder.query(bounding);
         builder.aggregation(centroid);
         builder.aggregation(bounds);
+    
 ```
 
-当然你也可以使用排序(建议与地理图形查询一起使用):
+当然你也可以使用排序(排序比较消耗内存,建议与地理图形查询一起使用):
 ```
   GeoDistanceSortBuilder sortBuilder = SortBuilders.geoDistanceSort(field,1,2)  //(1,2)是排序的中心
                                                    .unit(DistanceUnit.MILES)
@@ -115,26 +160,10 @@ eg:找出矩形范围内的点的中心和最小矩形
  
  *****************
  ****************
- ### 三.geo_shape 的形状查询
+ ### 三.形状查询
  
 
-|类型|geo_point|geo_shape|
-  |:---|:---|:---|
-  |地理位置查询方式|bounding box(矩形)|Point (MultiPoint) 点-多点|
-  |聚合|distance(圆)|LineString (MultiLineString) 线-多线|
-  ||polygon(多边形)|Polygon(MultiPolygon) 多边形-多个多边形|
-  |||GeometryCollection   组合图形|
-  |||envelope   矩形|
-  |||circle   圆形|
-  |选择图形之间关系|不能|能|
-  |使用预索引图形|不能|能|
-  
-说明:
-* ####  geo_point 只能查到满足范围内的点,并作相应处理;
-* ####  geo_shape 的对象都可以做查询图形;
-* ####  geo_shape 只要图形满足选择的图形之间关系,就会把该满足要求的图形全部返回;
-* ####  若字段映射为geo_shape ,且字段为geo_shape的一种.若进行图形查询,会将满足的结果集全部返回(只要类型是geo_shape的都会返回);
-* ####  在多边形查询中,geo_point 可以不封闭,但geo_shape 必须封闭(即首尾的点必须相同)
+
 
 ### geo_point 查询方式:
 ```
@@ -184,7 +213,7 @@ GeoShapeQueryBuilder qb = geoShapeQuery(field,lineString)
                                                                  
 qb.relation(ShapeRelation.WITHIN);
 
-// ps: geoShapeQuery() 创建的对象还是传给了GeoShapeQueryBuilder()
+// ps: geoShapeQuery() 创建的对象还是传给了GeoShapeQueryBuilder()(可从源码找到)
 ```
 ##### 使用预索引方式查询。先在索引中创建好的图形:
 ```
@@ -203,13 +232,32 @@ GeoShapeQueryBuilder shapeQuery = QueryBuilders.geoShapeQuery(
 
 ```
 
+|类型|geo_point|geo_shape|
+  |:---|:---|:---|
+  |地理位置查询方式|bounding box(矩形)|Point (MultiPoint) 点-多点|
+  ||distance(圆)|LineString (MultiLineString) 线-多线|
+  ||polygon(多边形)|Polygon(MultiPolygon) 多边形-多个多边形|
+  |||GeometryCollection   组合图形|
+  |||envelope   矩形|
+  |||circle   圆形|
+  |选择图形之间关系|不能|能|
+  |使用预索引图形|不能|能|
+  
+  
+说明:
+* ####  geo_point 只能查到满足范围内的点,并作相应处理;
+* ####  geo_shape 的对象都可以做查询图形;
+* ####  geo_shape 只要图形满足选择的图形之间关系,就会把该满足要求的图形全部返回;
+* ####  若字段映射为geo_shape ,且字段为geo_shape的一种.若进行图形查询,会将满足的结果集全部返回(只要类型是geo_shape的都会返回);
+* ####  在多边形查询中,geo_point 可以不封闭,但geo_shape 必须封闭(即首尾的点必须相同)
+
 ****
 ****
 ## 总结:
 * ### geo_shape 的优势在于地理形状的查询.
 * ### 它支持使用已在另一个索引和/或索引类型中已被索引的形状。当你可以预先定义好的形状列表，这样就不用每次必须提供它的坐标,这是geo_point做不到的.
 * ### 若你想使用point 类型,并想使用geo_shape 的特性去查点,那么使用 geo_shape,然后设置 points_only : true 来提高使用”点”性能, 具体可在官网找到[此项配置](https://www.elastic.co/guide/en/elasticsearch/reference/current/geo-shape.html):
-
+ 
 
 
 
